@@ -1,8 +1,6 @@
 <?php
 
 use Dingo\Api\Routing\Router;
-use Illuminate\Http\Request;
-use Specialtactics\L5Api\Http\Middleware\CheckUserRole;
 
 /*
 |--------------------------------------------------------------------------
@@ -26,6 +24,11 @@ Route::get('/', function () {
 
 $api = app('Dingo\Api\Routing\Router');
 $api->version('v1', function (Router $api) {
-    $api->get('/telemetry', 'App\Http\Controllers\TelemetryController@post');
+    $api->get('/alerts', 'App\Http\Controllers\AlertController@index');
+
+    $api->post('/devices', 'App\Http\Controllers\DeviceController@post');
+    $api->get('/devices', 'App\Http\Controllers\DeviceController@index');
+    $api->get('/devices/{id}', 'App\Http\Controllers\DeviceController@show');
+
     $api->post('/telemetry', 'App\Http\Controllers\TelemetryController@post');
 });
