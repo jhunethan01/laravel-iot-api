@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\ProcessAlerts;
 use App\Models\Alert;
 use App\Models\Device;
 use App\Models\Telemetry;
@@ -97,7 +98,7 @@ class TelemetryController extends Controller
                 ->first();
 
             if ($check['breach'] && !$open) {
-                Alert::create([
+                $alert = Alert::create([
                     'device_id' => $device->id,
                     'telemetry_id' => $telemetry->id,
                     'type' => $type,
@@ -105,6 +106,10 @@ class TelemetryController extends Controller
                     'message' => $check['message'],
                     'triggered_at' => $at,
                 ]);
+
+                // Sends the alert to AWS SQS for further processing
+                // Disabled, just here to learn how to use AWS SQS with Laravel.
+                // ProcessAlerts::dispatch($alert->id, 'opened')->afterCommit();
             }
 
             if (!$check['breach'] && $open) {
