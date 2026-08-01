@@ -1,0 +1,26 @@
+{
+  "resources/js/Pages/Dashboard.vue": {
+    "file": "assets/Dashboard-C9971I9y.js",
+    "name": "Dashboard",
+    "src": "resources/js/Pages/Dashboard.vue",
+    "isDynamicEntry": true,
+    "imports": [
+      "resources/js/app.js"
+    ],
+    "css": [
+      "assets/Dashboard-CjrGbPxR.css"
+    ]
+  },
+  "resources/js/app.js": {
+    "file": "assets/app-DwNvLQM0.js",
+    "name": "app",
+    "src": "resources/js/app.js",
+    "isEntry": true,
+    "dynamicImports": [
+      "resources/js/Pages/Dashboard.vue"
+    ],
+    "css": [
+      "assets/app-C2rJkF_3.css"
+    ]
+  }
+}

@@ -19,4 +19,9 @@ class Alert extends BaseModel
         'resolved_at',
         'acknowledged_at',
     ];
+
+    public function device()
+    {
+        return $this->belongsTo(Device::class);
+    }
 }
