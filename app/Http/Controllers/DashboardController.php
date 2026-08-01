@@ -37,6 +37,11 @@ class DashboardController extends Controller
                 'model' => $device->model,
                 'last_seen_at' => $device->last_seen_at ? Carbon::parse($device->last_seen_at)->toIso8601String() : null,
                 'status' => $criticalDeviceIds->contains($device->id) ? 'critical' : $device->status,
+                'latest_temperature' => $device->latest_temperature,
+                'latest_battery' => $device->latest_battery,
+                'latest_storage_used' => $device->latest_storage_used,
+                'latest_latitude' => $device->latest_latitude,
+                'latest_longitude' => $device->latest_longitude,
             ])
             ->when($status !== 'all', fn ($collection) => $collection->where('status', $status))
             ->values();
@@ -44,7 +49,11 @@ class DashboardController extends Controller
         $telemetry = Telemetry::where('recorded_at', '>=', Carbon::now()->subHours(24))
             ->orderBy('recorded_at')
             ->get(['recorded_at', 'temperature'])
-            ->groupBy(fn ($row) => Carbon::parse($row->recorded_at)->format('Y-m-d H:00'))
+            ->groupBy(function ($row) {
+                $recordedAt = Carbon::parse($row->recorded_at);
+                $bucketMinute = intdiv($recordedAt->minute, 10) * 10;
+                return $recordedAt->format('Y-m-d H:') . str_pad((string) $bucketMinute, 2, '0', STR_PAD_LEFT);
+            })
             ->map(fn ($rows, $bucket) => [
                 'bucket' => $bucket,
                 'avg_temperature' => round($rows->avg('temperature'), 1),

@@ -1,9 +1,8 @@
 <script setup>
 import { Head, router } from '@inertiajs/vue3';
-import { ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import StatTile from '@/Components/StatTile.vue';
 import StatusBadge from '@/Components/StatusBadge.vue';
-import TelemetryChart from '@/Components/TelemetryChart.vue';
 
 const props = defineProps({
     stats: { type: Object, required: true },
@@ -22,6 +21,8 @@ const STATUS_OPTIONS = [
 
 const search = ref(props.filters.search);
 const statusFilter = ref(props.filters.status);
+
+const activeAlerts = computed(() => props.alerts.filter((alert) => !alert.resolved));
 
 function applyFilters() {
     router.get(
@@ -59,6 +60,61 @@ function formatAlertType(type) {
 function formatTriggeredAt(value) {
     return new Date(value).toLocaleString();
 }
+
+function formatTemperature(value) {
+    return value === null || value === undefined ? '—' : `${value}°C`;
+}
+
+function formatBattery(value) {
+    return value === null || value === undefined ? '—' : `${value}%`;
+}
+
+function formatStorage(value) {
+    return value === null || value === undefined ? '—' : `${value}%`;
+}
+
+function formatCoordinates(lat, lng) {
+    if (lat === null || lat === undefined || lng === null || lng === undefined) return '—';
+    return `${Number(lat).toFixed(4)}, ${Number(lng).toFixed(4)}`;
+}
+
+const REFRESH_INTERVAL_SECONDS = 10;
+const secondsUntilRefresh = ref(REFRESH_INTERVAL_SECONDS);
+const lastRefreshedAt = ref(new Date());
+let isRefreshing = false;
+let tickTimer;
+
+function formatLastRefreshedAt(value) {
+    return value.toLocaleTimeString();
+}
+
+function refreshDashboard() {
+    isRefreshing = true;
+    router.reload({
+        only: ['stats', 'telemetry', 'alerts', 'devices'],
+        preserveState: true,
+        preserveScroll: true,
+        onFinish: () => {
+            isRefreshing = false;
+            lastRefreshedAt.value = new Date();
+            secondsUntilRefresh.value = REFRESH_INTERVAL_SECONDS;
+        },
+    });
+}
+
+onMounted(() => {
+    tickTimer = setInterval(() => {
+        if (isRefreshing) return;
+        secondsUntilRefresh.value -= 1;
+        if (secondsUntilRefresh.value <= 0) {
+            refreshDashboard();
+        }
+    }, 1000);
+});
+
+onUnmounted(() => {
+    clearInterval(tickTimer);
+});
 </script>
 
 <template>
@@ -67,6 +123,9 @@ function formatTriggeredAt(value) {
     <div class="dashboard">
         <header class="dashboard__header">
             <h1>Sentinel Dashboard</h1>
+            <p class="refresh-status">
+                Last updated {{ formatLastRefreshedAt(lastRefreshedAt) }} &middot; refreshing in {{ secondsUntilRefresh }}s
+            </p>
         </header>
 
         <section class="stat-grid">
@@ -83,44 +142,19 @@ function formatTriggeredAt(value) {
         </section>
 
         <section class="panel">
-            <h2>Recent telemetry</h2>
-            <p class="panel__subtitle">Average temperature, last 24 hours</p>
-            <TelemetryChart :points="telemetry" />
-        </section>
+            <h2>Active alerts</h2>
+            <p class="panel__subtitle">Unresolved alerts requiring attention</p>
 
-        <section class="panel">
-            <h2>Alerts</h2>
-            <p class="panel__subtitle">Most recent alerts across all devices</p>
-
-            <table class="device-table">
-                <thead>
-                    <tr>
-                        <th>Severity</th>
-                        <th>Type</th>
-                        <th>Message</th>
-                        <th>Device</th>
-                        <th>Triggered</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr v-for="alert in alerts" :key="alert.id">
-                        <td><StatusBadge :status="alert.severity" /></td>
-                        <td>{{ formatAlertType(alert.type) }}</td>
-                        <td>{{ alert.message }}</td>
-                        <td>{{ alert.device_name }}</td>
-                        <td>{{ formatTriggeredAt(alert.triggered_at) }}</td>
-                        <td>
-                            <span :class="alert.resolved ? 'alert-status alert-status--resolved' : 'alert-status alert-status--active'">
-                                {{ alert.resolved ? 'Resolved' : 'Active' }}
-                            </span>
-                        </td>
-                    </tr>
-                    <tr v-if="!alerts.length">
-                        <td colspan="6" class="device-table__empty">No alerts recorded.</td>
-                    </tr>
-                </tbody>
-            </table>
+            <ul class="active-alerts">
+                <li v-for="alert in activeAlerts" :key="alert.id" class="active-alerts__item">
+                    <StatusBadge :status="alert.severity" />
+                    <div class="active-alerts__body">
+                        <span class="active-alerts__message">{{ alert.message }}</span>
+                        <span class="active-alerts__meta">{{ alert.device_name }} &middot; {{ formatTriggeredAt(alert.triggered_at) }}</span>
+                    </div>
+                </li>
+                <li v-if="!activeAlerts.length" class="active-alerts__empty">No active alerts. All clear.</li>
+            </ul>
         </section>
 
         <section class="panel">
@@ -135,34 +169,81 @@ function formatTriggeredAt(value) {
                         :class="{ 'status-filter__option--active': statusFilter === option.value }"
                         @click="selectStatus(option.value)"
                     >
-                        {{ option.label }}
+                        {{ option.label }}  
                     </button>
                 </div>
             </div>
 
-            <table class="device-table">
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Device key</th>
-                        <th>Model</th>
-                        <th>Last seen</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr v-for="device in devices" :key="device.id">
-                        <td>{{ device.name }}</td>
-                        <td>{{ device.device_key }}</td>
-                        <td>{{ device.model ?? '—' }}</td>
-                        <td>{{ formatLastSeen(device.last_seen_at) }}</td>
-                        <td><StatusBadge :status="device.status" /></td>
-                    </tr>
-                    <tr v-if="!devices.length">
-                        <td colspan="5" class="device-table__empty">No devices match your search.</td>
-                    </tr>
-                </tbody>
-            </table>
+            <div class="table-scroll">
+                <table class="device-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Device key</th>
+                            <th>Model</th>
+                            <th>Temperature</th>
+                            <th>Battery</th>
+                            <th>Storage</th>
+                            <th>Location</th>
+                            <th>Last seen</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="device in devices" :key="device.id">
+                            <td>{{ device.name }}</td>
+                            <td>{{ device.device_key }}</td>
+                            <td>{{ device.model ?? '—' }}</td>
+                            <td>{{ formatTemperature(device.latest_temperature) }}</td>
+                            <td>{{ formatBattery(device.latest_battery) }}</td>
+                            <td>{{ formatStorage(device.latest_storage_used) }}</td>
+                            <td>{{ formatCoordinates(device.latest_latitude, device.latest_longitude) }}</td>
+                            <td>{{ formatLastSeen(device.last_seen_at) }}</td>
+                            <td><StatusBadge :status="device.status" /></td>
+                        </tr>
+                        <tr v-if="!devices.length">
+                            <td colspan="9" class="device-table__empty">No devices match your search.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h2>Alerts</h2>
+            <p class="panel__subtitle">Most recent alerts across all devices</p>
+
+            <div class="table-scroll">
+                <table class="device-table">
+                    <thead>
+                        <tr>
+                            <th>Severity</th>
+                            <th>Type</th>
+                            <th>Message</th>
+                            <th>Device</th>
+                            <th>Triggered</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="alert in alerts" :key="alert.id">
+                            <td><StatusBadge :status="alert.severity" /></td>
+                            <td>{{ formatAlertType(alert.type) }}</td>
+                            <td class="device-table__wrap">{{ alert.message }}</td>
+                            <td>{{ alert.device_name }}</td>
+                            <td>{{ formatTriggeredAt(alert.triggered_at) }}</td>
+                            <td>
+                                <span :class="alert.resolved ? 'alert-status alert-status--resolved' : 'alert-status alert-status--active'">
+                                    {{ alert.resolved ? 'Resolved' : 'Active' }}
+                                </span>
+                            </td>
+                        </tr>
+                        <tr v-if="!alerts.length">
+                            <td colspan="6" class="device-table__empty">No alerts recorded.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
         </section>
     </div>
 </template>
@@ -177,6 +258,11 @@ function formatTriggeredAt(value) {
 .dashboard__header h1 {
     font-size: 1.5rem;
     font-weight: 600;
+    margin-bottom: 0.375rem;
+}
+.refresh-status {
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
     margin-bottom: 1.5rem;
 }
 .stat-grid {
@@ -256,8 +342,14 @@ function formatTriggeredAt(value) {
     font-weight: 600;
     box-shadow: 0 1px 2px rgba(11, 11, 11, 0.08);
 }
+.table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin: 0 -0.25rem;
+}
 .device-table {
     width: 100%;
+    min-width: 640px;
     border-collapse: collapse;
     font-size: 0.875rem;
 }
@@ -270,15 +362,59 @@ function formatTriggeredAt(value) {
     letter-spacing: 0.03em;
     padding: 0.5rem 0.75rem;
     border-bottom: 1px solid var(--gridline);
+    white-space: nowrap;
 }
 .device-table td {
     padding: 0.625rem 0.75rem;
     border-bottom: 1px solid var(--gridline);
+    white-space: nowrap;
+}
+.device-table td.device-table__wrap {
+    white-space: normal;
+    min-width: 200px;
+    max-width: 320px;
 }
 .device-table__empty {
     text-align: center;
     color: var(--text-muted);
     padding: 1.5rem;
+}
+.active-alerts {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+.active-alerts__item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    border: 1px solid var(--gridline);
+    border-radius: 8px;
+    background: var(--page-plane);
+}
+.active-alerts__body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    min-width: 0;
+}
+.active-alerts__message {
+    font-size: 0.875rem;
+    color: var(--text-primary);
+}
+.active-alerts__meta {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+.active-alerts__empty {
+    text-align: center;
+    color: var(--text-muted);
+    padding: 1.5rem;
+    font-size: 0.875rem;
 }
 .alert-status {
     font-size: 0.8125rem;
