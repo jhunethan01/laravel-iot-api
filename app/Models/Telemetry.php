@@ -32,4 +32,9 @@ class Telemetry extends BaseModel
         'longitude',
         'online'
     ];
+
+    public function device()
+    {
+        return $this->belongsTo(Device::class);
+    }
 }

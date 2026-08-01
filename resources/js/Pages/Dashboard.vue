@@ -24,6 +24,13 @@ const statusFilter = ref(props.filters.status);
 
 const activeAlerts = computed(() => props.alerts.filter((alert) => !alert.resolved));
 
+const TABS = [
+    { value: 'devices', label: 'Devices' },
+    { value: 'alerts', label: 'Alerts' },
+    { value: 'telemetry', label: 'Recent telemetry' },
+];
+const activeTab = ref('devices');
+
 function applyFilters() {
     router.get(
         '/',
@@ -59,6 +66,10 @@ function formatAlertType(type) {
 
 function formatTriggeredAt(value) {
     return new Date(value).toLocaleString();
+}
+
+function formatOnline(value) {
+    return value ? 'Online' : 'Offline';
 }
 
 function formatTemperature(value) {
@@ -158,91 +169,141 @@ onUnmounted(() => {
         </section>
 
         <section class="panel">
-            <div class="filters-row">
-                <input v-model="search" type="search" placeholder="Search devices" class="search-input" />
-                <div class="status-filter">
-                    <button
-                        v-for="option in STATUS_OPTIONS"
-                        :key="option.value"
-                        type="button"
-                        class="status-filter__option"
-                        :class="{ 'status-filter__option--active': statusFilter === option.value }"
-                        @click="selectStatus(option.value)"
-                    >
-                        {{ option.label }}  
-                    </button>
+            <div class="tab-bar">
+                <button
+                    v-for="tab in TABS"
+                    :key="tab.value"
+                    type="button"
+                    class="tab-bar__option"
+                    :class="{ 'tab-bar__option--active': activeTab === tab.value }"
+                    @click="activeTab = tab.value"
+                >
+                    {{ tab.label }}
+                </button>
+            </div>
+
+            <div v-if="activeTab === 'devices'">
+                <div class="filters-row">
+                    <input v-model="search" type="search" placeholder="Search devices" class="search-input" />
+                    <div class="status-filter">
+                        <button
+                            v-for="option in STATUS_OPTIONS"
+                            :key="option.value"
+                            type="button"
+                            class="status-filter__option"
+                            :class="{ 'status-filter__option--active': statusFilter === option.value }"
+                            @click="selectStatus(option.value)"
+                        >
+                            {{ option.label }}
+                        </button>
+                    </div>
+                </div>
+
+                <div class="table-scroll">
+                    <table class="device-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Device key</th>
+                                <th>Model</th>
+                                <th>Temperature</th>
+                                <th>Battery</th>
+                                <th>Storage</th>
+                                <th>Location</th>
+                                <th>Last seen</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="device in devices" :key="device.id">
+                                <td>{{ device.name }}</td>
+                                <td>{{ device.device_key }}</td>
+                                <td>{{ device.model ?? '—' }}</td>
+                                <td>{{ formatTemperature(device.latest_temperature) }}</td>
+                                <td>{{ formatBattery(device.latest_battery) }}</td>
+                                <td>{{ formatStorage(device.latest_storage_used) }}</td>
+                                <td>{{ formatCoordinates(device.latest_latitude, device.latest_longitude) }}</td>
+                                <td>{{ formatLastSeen(device.last_seen_at) }}</td>
+                                <td><StatusBadge :status="device.status" /></td>
+                            </tr>
+                            <tr v-if="!devices.length">
+                                <td colspan="9" class="device-table__empty">No devices match your search.</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
 
-            <div class="table-scroll">
-                <table class="device-table">
-                    <thead>
-                        <tr>
-                            <th>Name</th>
-                            <th>Device key</th>
-                            <th>Model</th>
-                            <th>Temperature</th>
-                            <th>Battery</th>
-                            <th>Storage</th>
-                            <th>Location</th>
-                            <th>Last seen</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr v-for="device in devices" :key="device.id">
-                            <td>{{ device.name }}</td>
-                            <td>{{ device.device_key }}</td>
-                            <td>{{ device.model ?? '—' }}</td>
-                            <td>{{ formatTemperature(device.latest_temperature) }}</td>
-                            <td>{{ formatBattery(device.latest_battery) }}</td>
-                            <td>{{ formatStorage(device.latest_storage_used) }}</td>
-                            <td>{{ formatCoordinates(device.latest_latitude, device.latest_longitude) }}</td>
-                            <td>{{ formatLastSeen(device.last_seen_at) }}</td>
-                            <td><StatusBadge :status="device.status" /></td>
-                        </tr>
-                        <tr v-if="!devices.length">
-                            <td colspan="9" class="device-table__empty">No devices match your search.</td>
-                        </tr>
-                    </tbody>
-                </table>
+            <div v-else-if="activeTab === 'alerts'">
+                <p class="panel__subtitle">Most recent alerts across all devices</p>
+
+                <div class="table-scroll">
+                    <table class="device-table">
+                        <thead>
+                            <tr>
+                                <th>Severity</th>
+                                <th>Type</th>
+                                <th>Message</th>
+                                <th>Device</th>
+                                <th>Triggered</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="alert in alerts" :key="alert.id">
+                                <td><StatusBadge :status="alert.severity" /></td>
+                                <td>{{ formatAlertType(alert.type) }}</td>
+                                <td class="device-table__wrap">{{ alert.message }}</td>
+                                <td>{{ alert.device_name }}</td>
+                                <td>{{ formatTriggeredAt(alert.triggered_at) }}</td>
+                                <td>
+                                    <span :class="alert.resolved ? 'alert-status alert-status--resolved' : 'alert-status alert-status--active'">
+                                        {{ alert.resolved ? 'Resolved' : 'Active' }}
+                                    </span>
+                                </td>
+                            </tr>
+                            <tr v-if="!alerts.length">
+                                <td colspan="6" class="device-table__empty">No alerts recorded.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
-        </section>
 
-        <section class="panel">
-            <h2>Alerts</h2>
-            <p class="panel__subtitle">Most recent alerts across all devices</p>
+            <div v-else-if="activeTab === 'telemetry'">
+                <p class="panel__subtitle">Latest raw readings, last 24 hours</p>
 
-            <div class="table-scroll">
-                <table class="device-table">
-                    <thead>
-                        <tr>
-                            <th>Severity</th>
-                            <th>Type</th>
-                            <th>Message</th>
-                            <th>Device</th>
-                            <th>Triggered</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr v-for="alert in alerts" :key="alert.id">
-                            <td><StatusBadge :status="alert.severity" /></td>
-                            <td>{{ formatAlertType(alert.type) }}</td>
-                            <td class="device-table__wrap">{{ alert.message }}</td>
-                            <td>{{ alert.device_name }}</td>
-                            <td>{{ formatTriggeredAt(alert.triggered_at) }}</td>
-                            <td>
-                                <span :class="alert.resolved ? 'alert-status alert-status--resolved' : 'alert-status alert-status--active'">
-                                    {{ alert.resolved ? 'Resolved' : 'Active' }}
-                                </span>
-                            </td>
-                        </tr>
-                        <tr v-if="!alerts.length">
-                            <td colspan="6" class="device-table__empty">No alerts recorded.</td>
-                        </tr>
-                    </tbody>
-                </table>
+                <div class="table-scroll">
+                    <table class="device-table">
+                        <thead>
+                            <tr>
+                                <th>Device ID</th>
+                                <th>Device</th>
+                                <th>Recorded at</th>
+                                <th>Temperature</th>
+                                <th>Battery</th>
+                                <th>Storage</th>
+                                <th>Location</th>
+                                <th>Online</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="reading in telemetry" :key="reading.id">
+                                <td>{{ reading.device_id }}</td>
+                                <td>{{ reading.device_name }}</td>
+                                <td>{{ formatTriggeredAt(reading.recorded_at) }}</td>
+                                <td>{{ formatTemperature(reading.temperature) }}</td>
+                                <td>{{ formatBattery(reading.battery) }}</td>
+                                <td>{{ formatStorage(reading.storage_used) }}</td>
+                                <td>{{ formatCoordinates(reading.latitude, reading.longitude) }}</td>
+                                <td>{{ formatOnline(reading.online) }}</td>
+                            </tr>
+                            <tr v-if="!telemetry.length">
+                                <td colspan="8" class="device-table__empty">No telemetry recorded in the last 24 hours.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </section>
     </div>
@@ -341,6 +402,27 @@ onUnmounted(() => {
     color: var(--text-primary);
     font-weight: 600;
     box-shadow: 0 1px 2px rgba(11, 11, 11, 0.08);
+}
+.tab-bar {
+    display: flex;
+    gap: 0.25rem;
+    border-bottom: 1px solid var(--gridline);
+    margin-bottom: 1.25rem;
+}
+.tab-bar__option {
+    border: none;
+    background: transparent;
+    padding: 0.625rem 0.875rem;
+    margin-bottom: -1px;
+    border-bottom: 2px solid transparent;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+.tab-bar__option--active {
+    color: var(--text-primary);
+    border-bottom-color: var(--series-1);
 }
 .table-scroll {
     overflow-x: auto;

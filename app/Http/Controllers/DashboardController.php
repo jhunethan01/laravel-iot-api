@@ -46,19 +46,23 @@ class DashboardController extends Controller
             ->when($status !== 'all', fn ($collection) => $collection->where('status', $status))
             ->values();
 
-        $telemetry = Telemetry::where('recorded_at', '>=', Carbon::now()->subHours(24))
-            ->orderBy('recorded_at')
-            ->get(['recorded_at', 'temperature'])
-            ->groupBy(function ($row) {
-                $recordedAt = Carbon::parse($row->recorded_at);
-                $bucketMinute = intdiv($recordedAt->minute, 10) * 10;
-                return $recordedAt->format('Y-m-d H:') . str_pad((string) $bucketMinute, 2, '0', STR_PAD_LEFT);
-            })
-            ->map(fn ($rows, $bucket) => [
-                'bucket' => $bucket,
-                'avg_temperature' => round($rows->avg('temperature'), 1),
-            ])
-            ->values();
+        $telemetry = Telemetry::with('device')
+            ->where('recorded_at', '>=', Carbon::now()->subHours(24))
+            ->orderByDesc('recorded_at')
+            ->limit(10)
+            ->get()
+            ->map(fn (Telemetry $reading) => [
+                'id' => $reading->id,
+                'device_id' => $reading->device_id,
+                'device_name' => $reading->device->name ?? $reading->device->device_key ?? 'Unknown device',
+                'recorded_at' => Carbon::parse($reading->recorded_at)->toIso8601String(),
+                'temperature' => $reading->temperature,
+                'battery' => $reading->battery,
+                'storage_used' => $reading->storage_used,
+                'latitude' => $reading->latitude,
+                'longitude' => $reading->longitude,
+                'online' => $reading->online,
+            ]);
 
         $alerts = Alert::with('device')
             ->orderByDesc('triggered_at')
